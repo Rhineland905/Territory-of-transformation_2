@@ -5,7 +5,7 @@ from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeCha
 
 
 
-my_bot = telebot.TeleBot('5116218178:AAEASMZ5hfpBK0P5Swkq-p5jZDI49Qf-jL0')
+my_bot = telebot.TeleBot('7848940794:AAHwffW6cs8GwRyGBcxBS2-UaOsL63WMFzI')
 
 config_tg = {
     'user': 'root',
@@ -25,14 +25,16 @@ def set_bot_commands():
         BotCommand("text", "text"),
     ]
     my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
-    super_admin_id = [534670150,565948862]
+    super_admin_id = [565948862,534670150]
     super_admin = [
         BotCommand("admin_give", "Видавваня адмінки"),
         BotCommand("admin_delete", "Відібрати адмінку"),
     ]
-
-    for admin_id in super_admin_id:
-        my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id))
+    try:
+        for admin_id in super_admin_id:
+            my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id))
+    except:
+        pass
 
 set_bot_commands()
 def is_valid_name(text):
@@ -56,7 +58,8 @@ def process_admin_delete(message):
                 with conn_tg.cursor() as curs:
                     curs.execute("UPDATE user SET admin=%s WHERE user_id=%s", (False, str(id)))
                     conn_tg.commit()
-                my_bot.send_message(message.chat.id, f"✅ Користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
+                my_bot.send_message(message.chat.id, f"✅У користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
+                my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
         elif len(parts) == 2:
             first_name, last_name = parts[0], parts[1]
             with conn_tg.cursor() as curs:
@@ -70,7 +73,8 @@ def process_admin_delete(message):
                 with conn_tg.cursor() as curs:
                     curs.execute("UPDATE user SET admin=%s WHERE first_name=%s AND last_name=%s",(False, first_name, last_name))
                     conn_tg.commit()
-                my_bot.send_message(message.chat.id,f"✅ Користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
+                my_bot.send_message(message.chat.id,f"✅ У користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
+                my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
 
     else:
         my_bot.send_message(message.chat.id, "Як ти дізнавс про це! У тебе немае прав для цього")
@@ -93,7 +97,8 @@ def process_admin_give(message):
                 with conn_tg.cursor() as curs:
                     curs.execute("UPDATE user SET admin=%s WHERE user_id=%s", (True,str(id)))
                     conn_tg.commit()
-                my_bot.send_message(message.chat.id, f"✅ У користувачу {user_data[0][2]} {user_data[0][3]} видано адмінку!")
+                my_bot.send_message(message.chat.id, f"✅ Користувачу {user_data[0][2]} {user_data[0][3]} видано адмінку!")
+                my_bot.send_message(user_data[0][1], "Вас було підвищено до адміністратора.")
         elif len(parts) == 2:
             first_name, last_name = parts[0], parts[1]
             with conn_tg.cursor() as curs:
@@ -107,8 +112,8 @@ def process_admin_give(message):
                 with conn_tg.cursor() as curs:
                     curs.execute("UPDATE user SET admin=%s WHERE first_name=%s AND last_name=%s",(True, first_name, last_name))
                     conn_tg.commit()
-                my_bot.send_message(message.chat.id,f"✅ У користувачу {user_data[0][2]} {user_data[0][3]} видано адмінку!")
-
+                my_bot.send_message(message.chat.id,f"✅ Користувачу {user_data[0][2]} {user_data[0][3]} видано адмінку!")
+                my_bot.send_message(user_data[0][1], "Вас було підвищено до адміністратора.")
     else:
         my_bot.send_message(message.chat.id, "Як ти дізнавс про це! У тебе немае прав для цього")
 
@@ -139,7 +144,7 @@ def admin_give(message):
 
 @my_bot.message_handler(commands=['start'])
 def start(message):
-    my_bot.send_message(message.chat.id, f'<text>', reply_markup=markup)
+    my_bot.send_message(message.chat.id, f"Доброго дня!\nВас вітає чат-бот «Територія Трансформації». Якщо Ви бажаєте приймати участь у наших марафонах, будь ласка, пройдіть реєстрацію!!", reply_markup=markup)
 
 @my_bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
