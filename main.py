@@ -5,7 +5,7 @@ from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeCha
 
 
 
-my_bot = telebot.TeleBot('7848940794:AAHwffW6cs8GwRyGBcxBS2-UaOsL63WMFzI')
+my_bot = telebot.TeleBot('*****************')
 
 config_tg = {
     'user': 'root',
