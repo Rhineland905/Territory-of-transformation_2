@@ -5,7 +5,7 @@ from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeCha
 
 
 
-my_bot = telebot.TeleBot('*****************')
+my_bot = telebot.TeleBot('********')
 
 config_tg = {
     'user': 'root',
@@ -19,24 +19,45 @@ conn_tg = mysql.connector.connect(**config_tg)
 markup = telebot.types.InlineKeyboardMarkup()
 button = telebot.types.InlineKeyboardButton('Реєстрація', callback_data='register')
 markup.add(button)
+user_commands = [
+    BotCommand("text", "text"),
+]
+
+my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
+
+admin = [
+    BotCommand("list_user", "Перечень зарегистрованих користувачів"),
+]
+super_admin = [
+    BotCommand("admin_give", "Додати адміна"),
+    BotCommand("admin_delete", "Видалити адміна"),
+    BotCommand("list_user", "Перечень зарегистрованих користувачів"),
+]
+
+
+
 
 def set_bot_commands():
-    user_commands = [
-        BotCommand("text", "text"),
-    ]
-    my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
-    super_admin_id = [565948862,534670150]
-    super_admin = [
-        BotCommand("admin_give", "Додати адміна"),
-        BotCommand("admin_delete", "Видалити адміна"),
-    ]
-    try:
-        for admin_id in super_admin_id:
-            my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id))
-    except:
-        pass
+    with conn_tg.cursor() as curs:
+        curs.execute(f'SELECT * FROM  user WHERE admin=%s', (True,))
+        user_data = curs.fetchall()
+    for admin_id in user_data:
+        if user_data[0][6]:
+            my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id[1]))
+        elif user_data[0][4]:
+            my_bot.set_my_commands(admin, scope=BotCommandScopeChat(admin_id[1]))
+        else:
+            my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(admin_id[1]))
 
 set_bot_commands()
+def admin_chek(message):
+    id = message.from_user.id
+    with conn_tg.cursor() as curs:
+        curs.execute(f'SELECT * FROM  user WHERE user_id=%s', (id,))
+        user_data = curs.fetchall()
+    if user_data[0][4] or user_data[0][6]:
+        return True
+
 def is_valid_name(text):
     pattern = r'^[А-Яа-яЇїІіЄєҐґ]{2,}$'
     return bool(re.match(pattern, text))
@@ -60,6 +81,7 @@ def process_admin_delete(message):
                     conn_tg.commit()
                 my_bot.send_message(message.chat.id, f"✅У користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
                 my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
+                set_bot_commands()
         elif len(parts) == 2:
             first_name, last_name = parts[0], parts[1]
             with conn_tg.cursor() as curs:
@@ -75,6 +97,7 @@ def process_admin_delete(message):
                     conn_tg.commit()
                 my_bot.send_message(message.chat.id,f"✅ У користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
                 my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
+                set_bot_commands()
 
     else:
         my_bot.send_message(message.chat.id, "Як ти дізнавс про це! У тебе немае прав для цього")
@@ -99,6 +122,7 @@ def process_admin_give(message):
                     conn_tg.commit()
                 my_bot.send_message(message.chat.id, f"✅ Користувачу {user_data[0][2]} {user_data[0][3]} видано адмінку!")
                 my_bot.send_message(user_data[0][1], "Вас було підвищено до адміністратора.")
+                set_bot_commands()
         elif len(parts) == 2:
             first_name, last_name = parts[0], parts[1]
             with conn_tg.cursor() as curs:
@@ -114,6 +138,7 @@ def process_admin_give(message):
                     conn_tg.commit()
                 my_bot.send_message(message.chat.id,f"✅ Користувачу {user_data[0][2]} {user_data[0][3]} видано адмінку!")
                 my_bot.send_message(user_data[0][1], "Вас було підвищено до адміністратора.")
+                set_bot_commands()
     else:
         my_bot.send_message(message.chat.id, "Як ти дізнавс про це! У тебе немае прав для цього")
 
@@ -141,6 +166,14 @@ def admin_give(message):
     my_bot.send_message(message.chat.id, f"Ведіть Ім'я прізвище або id")
     my_bot.register_next_step_handler(message, process_admin_delete)
 
+@my_bot.message_handler(commands=['list_user'])
+def list_user(message):
+    if admin_chek(message):
+        with conn_tg.cursor() as curs:
+            curs.execute(f'SELECT * FROM  user')
+            user_data = curs.fetchall()
+        user_list = "\n".join([f"User ID: {user[1]}, {user[2]} {user[3]}" for user in user_data])
+        my_bot.send_message(message.chat.id, f"Список користувачів:\n{user_list}")
 
 @my_bot.message_handler(commands=['start'])
 def start(message):
