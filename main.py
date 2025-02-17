@@ -27,8 +27,8 @@ def set_bot_commands():
     my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
     super_admin_id = [565948862,534670150]
     super_admin = [
-        BotCommand("admin_give", "Видавваня адмінки"),
-        BotCommand("admin_delete", "Відібрати адмінку"),
+        BotCommand("admin_give", "Додати адміна"),
+        BotCommand("admin_delete", "Видалити адміна"),
     ]
     try:
         for admin_id in super_admin_id:
