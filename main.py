@@ -27,13 +27,15 @@ my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
 admin = [
     BotCommand("list_user", "Перечень зарегистрованих користувачів"),
-    BotCommand("curator", "Додати куратора"),
+    BotCommand("curator_give", "Додати куратора"),
+    BotCommand("curator_delete", "Видалити куратора"),
 ]
 super_admin = [
     BotCommand("admin_give", "Додати адміна"),
     BotCommand("admin_delete", "Видалити адміна"),
     BotCommand("list_user", "Перечень зарегистрованих користувачів"),
-    BotCommand("curator", "Додати куратора"),
+    BotCommand("curator_give", "Додати куратора"),
+    BotCommand("curator_delete", "Видалити куратора"),
 ]
 
 
@@ -41,15 +43,14 @@ super_admin = [
 
 def set_bot_commands():
     with conn_tg.cursor() as curs:
-        curs.execute(f'SELECT * FROM  user WHERE admin=%s', (True,))
+        curs.execute('SELECT * FROM user WHERE admin = %s OR super_admin = %s', (True, True))
         user_data = curs.fetchall()
     for admin_id in user_data:
         if user_data[0][6]:
             my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id[1]))
         elif user_data[0][4]:
             my_bot.set_my_commands(admin, scope=BotCommandScopeChat(admin_id[1]))
-        else:
-            my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(admin_id[1]))
+
 
 set_bot_commands()
 def take_curator_date(id):
@@ -119,7 +120,8 @@ def process_admin_delete(message):
                     conn_tg.commit()
                 my_bot.send_message(message.chat.id, f"✅У користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
                 my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
-                set_bot_commands()
+                my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(user_data[0][1]))
+
         elif len_chek(message) == 2:
             first_name, last_name = parts[0], parts[1]
             user_data = take_user_data_FirstLastName(first_name,last_name)
@@ -132,6 +134,7 @@ def process_admin_delete(message):
                     curs.execute("UPDATE user SET admin=%s WHERE first_name=%s AND last_name=%s",(False, first_name, last_name))
                     conn_tg.commit()
                 my_bot.send_message(message.chat.id,f"✅ У користувачу {user_data[0][2]} {user_data[0][3]} відібрано адмінку!")
+                my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(user_data[0][1]))
                 my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
                 set_bot_commands()
 
@@ -186,17 +189,46 @@ def firts_last_name(message):
 def curator(message):
     if admin_chek(message):
         if len_chek(message) == 1:
-            id = message.from_user.id
-            with conn_tg.cursor() as curs:
-                curs.execute(f'SELECT * FROM  curator WHERE user_id=%s', (str(id),))
-                curator_data = curs.fetchall()
-            if not curator_data:
-                with conn_tg.cursor() as curs:
-                    curs.execute('INSERT INTO curator (user_id) VALUES (%s)',(id,))
-                    conn_tg.commit()
-                my_bot.send_message(message.chat.id, f"Куратор успішно додан")
+            text = message.text
+            if take_user_data_id(text):
+                if not take_curator_date(text):
+
+                    with conn_tg.cursor() as curs:
+                        curs.execute('INSERT INTO curator (user_id) VALUES (%s)',(text,))
+                        conn_tg.commit()
+                    my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
+                else:
+                    with conn_tg.cursor() as curs:
+                        curs.execute('DELETE FROM curator WHERE user_id = %s', (text,))
+                        conn_tg.commit()
+                    my_bot.send_message(message.chat.id, "Куратора успішно видалено.")
             else:
-                pass
+                my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
+        elif len_chek(message) == 2:
+            text = message.text
+            parts = text.split(maxsplit=1)
+            user_data = take_user_data_FirstLastName(parts[0],parts[1])
+            if user_data:
+                with conn_tg.cursor() as curs:
+                    curs.execute("SELECT * FROM curator WHERE user_id=%s", (user_data[0][1],))
+                    curator_data = curs.fetchall()
+                if not curator_data:
+                    with conn_tg.cursor() as curs:
+                        curs.execute('INSERT INTO curator (user_id) VALUES (%s)', (user_data[0][1],))
+                        conn_tg.commit()
+                        my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
+                else:
+                    with conn_tg.cursor() as curs:
+                        curs.execute('DELETE FROM curator WHERE user_id = %s', (user_data[0][1],))
+                        conn_tg.commit()
+                    my_bot.send_message(message.chat.id, "Куратора успішно видалено.")
+
+            else:
+                my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
+
+
+
+
 @my_bot.message_handler(commands=['curator'])
 def curator_command(message):
     my_bot.send_message(message.chat.id, f"Ведіть Ім'я прізвище або id")
