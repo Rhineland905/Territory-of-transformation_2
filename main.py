@@ -1,6 +1,5 @@
-import mysql.connector
-import telebot
-import re
+import mysql.connector,telebot,re,json
+
 from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
 
@@ -30,14 +29,14 @@ my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
 admin = [
     BotCommand("list_user", "Перечень зарегистрованих користувачів"),
-    BotCommand("curator_give", "Додати куратора"),
+    BotCommand("curator_give", "Додати куратора/Подивитися куратора"),
     BotCommand("curator_delete", "Видалити куратора"),
 ]
 super_admin = [
     BotCommand("admin_give", "Додати адміна"),
     BotCommand("admin_delete", "Видалити адміна"),
     BotCommand("list_user", "Перечень зарегистрованих користувачів"),
-    BotCommand("curator", "Додати куратора"),
+    BotCommand("curator", "Додати куратора/Подивитися куратора"),
 ]
 
 def create_curator_markup(user_id):
@@ -46,6 +45,18 @@ def create_curator_markup(user_id):
     delete_curator = telebot.types.InlineKeyboardButton("Видалити куратора", callback_data=f'delete_curator:{user_id}')
     markup.add(curator_update)
     markup.add(delete_curator)
+    return markup
+
+def creat_curator_registration_markup():
+    with conn_tg.cursor() as curs:
+        curs.execute("SELECT * FROM curator")
+        curator_data = curs.fetchall()
+    markup = telebot.types.InlineKeyboardMarkup()
+
+    for i in curator_data:
+        user_data = take_user_data_id(i[1])
+        add_curator = telebot.types.InlineKeyboardButton(f"{user_data[0][2]} {user_data[0][3]}", callback_data=f'regestration_curator:{i[1]}')
+        markup.add(add_curator)
     return markup
 
 
@@ -147,7 +158,6 @@ def process_admin_delete(message):
                 my_bot.send_message(user_data[0][1], "Вас було позбавлено ролі адміністратора")
                 set_bot_commands()
 
-
 def process_admin_give(message):
     if super_admin_chek(message):
         text = message.text
@@ -181,7 +191,6 @@ def process_admin_give(message):
                 my_bot.send_message(user_data[0][1], "Вас було підвищено до адміністратора.")
                 set_bot_commands()
 
-
 def firts_last_name(message):
     id = message.from_user.id
     text = message.text
@@ -190,10 +199,11 @@ def firts_last_name(message):
         with conn_tg.cursor() as curs:
             curs.execute("INSERT INTO user (user_id, first_name, last_name) VALUES (%s, %s, %s)",(id,parts[0],parts[1]))
             conn_tg.commit()
-            my_bot.send_message(message.chat.id, "Вітаю ви успішно зареєструвалися")
+        my_bot.send_message(message.chat.id, "Виберіть куратора.",reply_markup=creat_curator_registration_markup())
     else:
         my_bot.send_message(message.chat.id, "Ви ввели неправильне ім'я або фамілю")
         my_bot.register_next_step_handler(message, firts_last_name)
+
 
 def curator(message):
     if admin_chek(message):
@@ -208,9 +218,7 @@ def curator(message):
                 else:
                     user_data = take_user_data_id(text)
                     curator_data = take_curator_date(text)
-                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][2]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(text))
-
-
+                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][3]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(text))
             else:
                 my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
         elif len_chek(message) == 2:
@@ -225,14 +233,16 @@ def curator(message):
                         conn_tg.commit()
                         my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
                 else:
-                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][2]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(user_data[0][1]))
+                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][3]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(user_data[0][1]))
 
             else:
                 my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
 
-
-
-
+def update_curator(message,user_id):
+    with conn_tg.cursor() as curs:
+        curs.execute("UPDATE curator SET description=%s WHERE user_id=%s", (message.text,user_id))
+        conn_tg.commit()
+    my_bot.send_message(message.chat.id, "Дані успішно оновлено.")
 
 @my_bot.message_handler(commands=['curator'])
 def curator_command(message):
@@ -261,6 +271,7 @@ def list_user(message):
 @my_bot.message_handler(commands=['start'])
 def start(message):
     my_bot.send_message(message.chat.id, f"Доброго дня!\nВас вітає чат-бот «Територія Трансформації». Якщо Ви бажаєте приймати участь у наших марафонах, будь ласка, пройдіть реєстрацію!!", reply_markup=markup)
+
 @my_bot.callback_query_handler(func=lambda call: call.data.startswith("delete_curator:"))
 def delete_curator_callback(call):
     user_id = call.data.split(":")[1]
@@ -269,6 +280,21 @@ def delete_curator_callback(call):
         conn_tg.commit()
     user_data = take_user_data_id(user_id)
     my_bot.edit_message_text(f"✅ Куратор {user_data[0][2]} {user_data[0][3]} успішно видалений.",call.message.chat.id,call.message.message_id)
+
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("update_curator:"))
+def update_curator_callback(call):
+    user_id = call.data.split(":")[1]
+    my_bot.send_message(call.message.chat.id, "Введіть опис.")
+    my_bot.register_next_step_handler(call.message, update_curator, user_id)
+
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("regestration_curator:"))
+def update_curator_callback(call):
+    curator_id = call.data.split(":")[1]
+    with conn_tg.cursor() as curs:
+        curs.execute("UPDATE user SET curator=%s WHERE user_id=%s", (curator_id, call.from_user.id))
+        conn_tg.commit()
+    my_bot.send_message(call.message.chat.id, "Ви успішно зареєструвалися.")
+    curato_data = take_curator_date(curator_id)
 
 
 @my_bot.callback_query_handler(func=lambda call: True)
