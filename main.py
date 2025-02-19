@@ -19,6 +19,9 @@ conn_tg = mysql.connector.connect(**config_tg)
 markup = telebot.types.InlineKeyboardMarkup()
 button = telebot.types.InlineKeyboardButton('Реєстрація', callback_data='register')
 markup.add(button)
+
+
+
 user_commands = [
     BotCommand("text", "text"),
 ]
@@ -34,10 +37,16 @@ super_admin = [
     BotCommand("admin_give", "Додати адміна"),
     BotCommand("admin_delete", "Видалити адміна"),
     BotCommand("list_user", "Перечень зарегистрованих користувачів"),
-    BotCommand("curator_give", "Додати куратора"),
-    BotCommand("curator_delete", "Видалити куратора"),
+    BotCommand("curator", "Додати куратора"),
 ]
 
+def create_curator_markup(user_id):
+    markup = telebot.types.InlineKeyboardMarkup()
+    curator_update = telebot.types.InlineKeyboardButton("Обновити опис", callback_data=f'update_curator:{user_id}')
+    delete_curator = telebot.types.InlineKeyboardButton("Видалити куратора", callback_data=f'delete_curator:{user_id}')
+    markup.add(curator_update)
+    markup.add(delete_curator)
+    return markup
 
 
 
@@ -192,16 +201,16 @@ def curator(message):
             text = message.text
             if take_user_data_id(text):
                 if not take_curator_date(text):
-
                     with conn_tg.cursor() as curs:
                         curs.execute('INSERT INTO curator (user_id) VALUES (%s)',(text,))
                         conn_tg.commit()
                     my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
                 else:
-                    with conn_tg.cursor() as curs:
-                        curs.execute('DELETE FROM curator WHERE user_id = %s', (text,))
-                        conn_tg.commit()
-                    my_bot.send_message(message.chat.id, "Куратора успішно видалено.")
+                    user_data = take_user_data_id(text)
+                    curator_data = take_curator_date(text)
+                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][2]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(text))
+
+
             else:
                 my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
         elif len_chek(message) == 2:
@@ -209,22 +218,18 @@ def curator(message):
             parts = text.split(maxsplit=1)
             user_data = take_user_data_FirstLastName(parts[0],parts[1])
             if user_data:
-                with conn_tg.cursor() as curs:
-                    curs.execute("SELECT * FROM curator WHERE user_id=%s", (user_data[0][1],))
-                    curator_data = curs.fetchall()
+                curator_data = take_curator_date(user_data[0][1])
                 if not curator_data:
                     with conn_tg.cursor() as curs:
                         curs.execute('INSERT INTO curator (user_id) VALUES (%s)', (user_data[0][1],))
                         conn_tg.commit()
                         my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
                 else:
-                    with conn_tg.cursor() as curs:
-                        curs.execute('DELETE FROM curator WHERE user_id = %s', (user_data[0][1],))
-                        conn_tg.commit()
-                    my_bot.send_message(message.chat.id, "Куратора успішно видалено.")
+                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][2]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(user_data[0][1]))
 
             else:
                 my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
+
 
 
 
@@ -256,11 +261,20 @@ def list_user(message):
 @my_bot.message_handler(commands=['start'])
 def start(message):
     my_bot.send_message(message.chat.id, f"Доброго дня!\nВас вітає чат-бот «Територія Трансформації». Якщо Ви бажаєте приймати участь у наших марафонах, будь ласка, пройдіть реєстрацію!!", reply_markup=markup)
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("delete_curator:"))
+def delete_curator_callback(call):
+    user_id = call.data.split(":")[1]
+    with conn_tg.cursor() as curs:
+        curs.execute('DELETE FROM curator WHERE user_id = %s', (user_id,))
+        conn_tg.commit()
+    user_data = take_user_data_id(user_id)
+    my_bot.edit_message_text(f"✅ Куратор {user_data[0][2]} {user_data[0][3]} успішно видалений.",call.message.chat.id,call.message.message_id)
+
 
 @my_bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    id = call.from_user.id
     if call.data == "register":
-        id = call.from_user.id
         with conn_tg.cursor() as curs:
             curs.execute(f'SELECT * FROM  user WHERE user_id=%s', (id,))
             user_data = curs.fetchall()
@@ -269,6 +283,11 @@ def callback_query(call):
             my_bot.register_next_step_handler(call.message, firts_last_name)
         else:
             my_bot.send_message(call.message.chat.id, "Ви вже зареєстровані")
+
+
+
+
+
 
 
 
