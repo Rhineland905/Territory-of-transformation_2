@@ -1,5 +1,4 @@
 import mysql.connector,telebot,re,json
-
 from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
 
@@ -46,8 +45,23 @@ def create_curator_markup(user_id):
     markup = telebot.types.InlineKeyboardMarkup()
     curator_update = telebot.types.InlineKeyboardButton("Обновити опис", callback_data=f'update_curator:{user_id}')
     delete_curator = telebot.types.InlineKeyboardButton("Видалити куратора", callback_data=f'delete_curator:{user_id}')
+    back_curator = telebot.types.InlineKeyboardButton("Повернутися", callback_data=f'back_curator')
     markup.add(curator_update)
     markup.add(delete_curator)
+    markup.add(back_curator)
+    return markup
+def creat_curator_markup():
+    with conn_tg.cursor() as curs:
+        curs.execute("SELECT * FROM curator")
+        curator_data = curs.fetchall()
+    markup = telebot.types.InlineKeyboardMarkup()
+
+    for i in curator_data:
+        user_data = take_user_data_id(i[1])
+        curator = telebot.types.InlineKeyboardButton(f"{user_data[0][2]} {user_data[0][3]}", callback_data=f'curators:{i[1]}')
+        markup.add(curator)
+    curator = telebot.types.InlineKeyboardButton(f"Додати куратора", callback_data=f'creat_curator')
+    markup.add(curator)
     return markup
 
 def creat_curator_registration_markup(user_id):
@@ -138,6 +152,21 @@ def admin_chek(message):
     else:
         my_bot.send_message(message.chat.id, "Недостатньо прав для виконання цієї дії")
         return False
+def add_curator(message):
+    text = message.text.strip()
+    parts = text.split(maxsplit=1)
+    user_data = take_user_data_FirstLastName(parts[0],parts[1])
+    if user_data:
+        data = take_curator_date(user_data[0][1])
+    else:
+        my_bot.send_message(message.chat.id, "Користувача не існує в системі")
+    if not data:
+        with conn_tg.cursor() as curs:
+            curs.execute("INSERT INTO curator (user_id) VALUES (%s)", (user_data[0][1],))
+            conn_tg.commit()
+            my_bot.send_message(message.chat.id, "Куратор успішно додан")
+    else:
+        my_bot.send_message(message.chat.id, "Куратор вже існує")
 
 def is_valid_name(text):
     pattern = r'^[А-Яа-яЇїІіЄєҐґ]{2,}$'
@@ -224,49 +253,10 @@ def firts_last_name(message):
         my_bot.register_next_step_handler(message, firts_last_name)
 
 
-def curator(message):
-    if admin_chek(message):
-        if len_chek(message) == 1:
-            text = message.text
-            if take_user_data_id(text):
-                if not take_curator_date(text):
-                    with conn_tg.cursor() as curs:
-                        curs.execute('INSERT INTO curator (user_id) VALUES (%s)',(text,))
-                        conn_tg.commit()
-                    my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
-                else:
-                    user_data = take_user_data_id(text)
-                    curator_data = take_curator_date(text)
-                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][3]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(text))
-            else:
-                my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
-        elif len_chek(message) == 2:
-            text = message.text
-            parts = text.split(maxsplit=1)
-            user_data = take_user_data_FirstLastName(parts[0],parts[1])
-            if user_data:
-                curator_data = take_curator_date(user_data[0][1])
-                if not curator_data:
-                    with conn_tg.cursor() as curs:
-                        curs.execute('INSERT INTO curator (user_id) VALUES (%s)', (user_data[0][1],))
-                        conn_tg.commit()
-                        my_bot.send_message(message.chat.id, f"Куратора успішно додано.")
-                else:
-                    my_bot.send_message(message.chat.id, f"\t {user_data[0][2]} {user_data[0][3]} \n {curator_data[0][3]}",reply_markup=create_curator_markup(user_data[0][1]))
-
-            else:
-                my_bot.send_message(message.chat.id, "Користувача не існує в системі.")
-
-def update_curator(message,user_id):
-    with conn_tg.cursor() as curs:
-        curs.execute("UPDATE curator SET description=%s WHERE user_id=%s", (message.text,user_id))
-        conn_tg.commit()
-    my_bot.send_message(message.chat.id, "Дані успішно оновлено.")
 
 @my_bot.message_handler(commands=['curator'])
 def curator_command(message):
-    my_bot.send_message(message.chat.id, f"Ведіть Ім'я прізвище або id")
-    my_bot.register_next_step_handler(message, curator)
+    my_bot.send_message(message.chat.id, f"Перечень кураторво: ",reply_markup=creat_curator_markup())
 
 @my_bot.message_handler(commands=['admin_give'])
 def admin_give(message):
@@ -297,11 +287,7 @@ def delete_curator_callback(call):
     user_data = take_user_data_id(user_id)
     my_bot.edit_message_text(f"✅ Куратор {user_data[0][2]} {user_data[0][3]} успішно видалений.",call.message.chat.id,call.message.message_id)
 
-@my_bot.callback_query_handler(func=lambda call: call.data.startswith("update_curator:"))
-def update_curator_callback(call):
-    user_id = call.data.split(":")[1]
-    my_bot.send_message(call.message.chat.id, "Введіть опис:")
-    my_bot.register_next_step_handler(call.message, update_curator, user_id)
+
 
 @my_bot.callback_query_handler(func=lambda call: call.data.startswith("regestration_curator:"))
 def update_curator_callback(call):
@@ -342,20 +328,49 @@ def list_user(call):
         reply_markup=creat_list_all_user_markup()
     )
 
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("creat_curator"))
+def list_user(call):
+    my_bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"Введіть ім'я та прізвище",
+    )
+    my_bot.register_next_step_handler(call.message,add_curator)
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("curators:"))
+def list_user(call):
+    data = call.data.split(":")[1]
+    curator_data = take_curator_date(data)
+    data_user = take_user_data_id(data)
+    my_bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"\t{data_user[0][2]} {data_user[0][2]}\n {curator_data[0][3]}",
+        reply_markup=create_curator_markup(data)
+    )
 
 
-@my_bot.callback_query_handler(func=lambda call: True)
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("back_curator"))
+def list_user(call):
+    my_bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"Перечень кураторво: ",
+        reply_markup=creat_curator_markup()
+    )
+
+
+
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("register"))
 def callback_query(call):
     id = call.from_user.id
-    if call.data == "register":
-        with conn_tg.cursor() as curs:
-            curs.execute(f'SELECT * FROM  user WHERE user_id=%s', (id,))
-            user_data = curs.fetchall()
-        if not user_data:
-            my_bot.send_message(call.message.chat.id, "Введіть ім'я та фамілію")
-            my_bot.register_next_step_handler(call.message, firts_last_name)
-        else:
-            my_bot.send_message(call.message.chat.id, "Ви вже зареєстровані")
+    with conn_tg.cursor() as curs:
+        curs.execute(f'SELECT * FROM  user WHERE user_id=%s', (id,))
+        user_data = curs.fetchall()
+    if not user_data:
+        my_bot.send_message(call.message.chat.id, "Введіть ім'я та фамілію")
+        my_bot.register_next_step_handler(call.message, firts_last_name)
+    else:
+        my_bot.send_message(call.message.chat.id, "Ви вже зареєстровані")
 
 
 
