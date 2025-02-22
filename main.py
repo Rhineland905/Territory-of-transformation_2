@@ -28,7 +28,7 @@ user_commands = [
 my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
 admin = [
-    BotCommand("list_user", "Перечень зарегистрованих користувачів"),
+    BotCommand("list", "Перечень користувачів та інформація про них"),
     BotCommand("curator_give", "Додати куратора/Подивитися куратора"),
     BotCommand("curator_delete", "Видалити куратора"),
 ]
@@ -47,7 +47,7 @@ def create_curator_markup(user_id):
     markup.add(delete_curator)
     return markup
 
-def creat_curator_registration_markup():
+def creat_curator_registration_markup(user_id):
     with conn_tg.cursor() as curs:
         curs.execute("SELECT * FROM curator")
         curator_data = curs.fetchall()
@@ -55,7 +55,7 @@ def creat_curator_registration_markup():
 
     for i in curator_data:
         user_data = take_user_data_id(i[1])
-        add_curator = telebot.types.InlineKeyboardButton(f"{user_data[0][2]} {user_data[0][3]}", callback_data=f'regestration_curator:{i[1]}')
+        add_curator = telebot.types.InlineKeyboardButton(f"{user_data[0][2]} {user_data[0][3]}", callback_data=f'regestration_curator:{i[1]} {user_id}')
         markup.add(add_curator)
     return markup
 
@@ -66,13 +66,26 @@ def set_bot_commands():
         curs.execute('SELECT * FROM user WHERE admin = %s OR super_admin = %s', (True, True))
         user_data = curs.fetchall()
     for admin_id in user_data:
-        if user_data[0][6]:
+        if admin_id[6]:
             my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id[1]))
-        elif user_data[0][4]:
+        elif admin_id[4]:
             my_bot.set_my_commands(admin, scope=BotCommandScopeChat(admin_id[1]))
 
 
-set_bot_commands()
+def set_bot_commands_start():
+    with conn_tg.cursor() as curs:
+        curs.execute('SELECT * FROM user')
+        user_data = curs.fetchall()
+        for admin_id in user_data:
+            if admin_id[6]:
+                my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id[1]))
+            elif admin_id[4]:
+                my_bot.set_my_commands(admin, scope=BotCommandScopeChat(admin_id[1]))
+            else:
+                my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(admin_id[1]))
+
+
+set_bot_commands_start()
 def take_curator_date(id):
     with conn_tg.cursor() as curs:
         curs.execute(f'SELECT * FROM  curator WHERE user_id=%s', (str(id),))
@@ -199,7 +212,7 @@ def firts_last_name(message):
         with conn_tg.cursor() as curs:
             curs.execute("INSERT INTO user (user_id, first_name, last_name) VALUES (%s, %s, %s)",(id,parts[0],parts[1]))
             conn_tg.commit()
-        my_bot.send_message(message.chat.id, "Виберіть куратора.",reply_markup=creat_curator_registration_markup())
+        my_bot.send_message(message.chat.id, "Виберіть куратора.",reply_markup=creat_curator_registration_markup(id))
     else:
         my_bot.send_message(message.chat.id, "Ви ввели неправильне ім'я або фамілю")
         my_bot.register_next_step_handler(message, firts_last_name)
@@ -289,12 +302,21 @@ def update_curator_callback(call):
 
 @my_bot.callback_query_handler(func=lambda call: call.data.startswith("regestration_curator:"))
 def update_curator_callback(call):
-    curator_id = call.data.split(":")[1]
+    data = call.data.split(":")[1]
+    data = data.split(maxsplit=1)
     with conn_tg.cursor() as curs:
-        curs.execute("UPDATE user SET curator=%s WHERE user_id=%s", (curator_id, call.from_user.id))
+        curs.execute("UPDATE user SET curator=%s WHERE user_id=%s", (data[0], call.from_user.id))
         conn_tg.commit()
     my_bot.send_message(call.message.chat.id, "Ви успішно зареєструвалися.")
-    curato_data = take_curator_date(curator_id)
+    curato_data = take_curator_date(data[0])
+    if curato_data[0][2]:
+        list_user = json.loads(curato_data[0][2])
+    else:
+        list_user = []
+    list_user.append(f"{data[1]}")
+    with conn_tg.cursor() as curs:
+        curs.execute("UPDATE curator SET list_of_users=%s WHERE user_id=%s", (json.dumps(list_user), data[0]))
+        conn_tg.commit()
 
 
 @my_bot.callback_query_handler(func=lambda call: True)
