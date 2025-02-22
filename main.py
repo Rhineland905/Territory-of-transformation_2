@@ -29,8 +29,7 @@ my_bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
 admin = [
     BotCommand("list", "Перечень користувачів та інформація про них"),
-    BotCommand("curator_give", "Додати куратора/Подивитися куратора"),
-    BotCommand("curator_delete", "Видалити куратора"),
+    BotCommand("curator", "Додати куратора/Подивитися куратора"),
 ]
 super_admin = [
     BotCommand("admin_give", "Додати адміна"),
@@ -38,7 +37,11 @@ super_admin = [
     BotCommand("list_user", "Перечень зарегистрованих користувачів"),
     BotCommand("curator", "Додати куратора/Подивитися куратора"),
 ]
-
+def select_all_form_users():
+    with conn_tg.cursor() as curs:
+        curs.execute(f'SELECT * FROM  user')
+        user_data = curs.fetchall()
+    return user_data
 def create_curator_markup(user_id):
     markup = telebot.types.InlineKeyboardMarkup()
     curator_update = telebot.types.InlineKeyboardButton("Обновити опис", callback_data=f'update_curator:{user_id}')
@@ -59,8 +62,13 @@ def creat_curator_registration_markup(user_id):
         markup.add(add_curator)
     return markup
 
-
-
+def creat_list_all_user_markup():
+    user_data = select_all_form_users()
+    markup = telebot.types.InlineKeyboardMarkup()
+    for user in user_data:
+        add_user = telebot.types.InlineKeyboardButton(f"{user[2]} {user[3]}", callback_data=f'list_user:{user[1]}')
+        markup.add(add_user)
+    return markup
 def set_bot_commands():
     with conn_tg.cursor() as curs:
         curs.execute('SELECT * FROM user WHERE admin = %s OR super_admin = %s', (True, True))
@@ -73,16 +81,14 @@ def set_bot_commands():
 
 
 def set_bot_commands_start():
-    with conn_tg.cursor() as curs:
-        curs.execute('SELECT * FROM user')
-        user_data = curs.fetchall()
-        for admin_id in user_data:
-            if admin_id[6]:
-                my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id[1]))
-            elif admin_id[4]:
-                my_bot.set_my_commands(admin, scope=BotCommandScopeChat(admin_id[1]))
-            else:
-                my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(admin_id[1]))
+    user_data = select_all_form_users()
+    for admin_id in user_data:
+        if admin_id[6]:
+            my_bot.set_my_commands(super_admin, scope=BotCommandScopeChat(admin_id[1]))
+        elif admin_id[4]:
+            my_bot.set_my_commands(admin, scope=BotCommandScopeChat(admin_id[1]))
+        else:
+            my_bot.set_my_commands(user_commands, scope=BotCommandScopeChat(admin_id[1]))
 
 
 set_bot_commands_start()
@@ -275,11 +281,8 @@ def admin_give(message):
 @my_bot.message_handler(commands=['list_user'])
 def list_user(message):
     if admin_chek(message):
-        with conn_tg.cursor() as curs:
-            curs.execute(f'SELECT * FROM  user')
-            user_data = curs.fetchall()
-        user_list = "\n".join([f"User ID: {user[1]}, {user[2]} {user[3]}" for user in user_data])
-        my_bot.send_message(message.chat.id, f"Список користувачів:\n{user_list}")
+        my_bot.send_message(message.chat.id, "Перечень користвувачві: ",reply_markup=creat_list_all_user_markup())
+
 
 @my_bot.message_handler(commands=['start'])
 def start(message):
@@ -297,7 +300,7 @@ def delete_curator_callback(call):
 @my_bot.callback_query_handler(func=lambda call: call.data.startswith("update_curator:"))
 def update_curator_callback(call):
     user_id = call.data.split(":")[1]
-    my_bot.send_message(call.message.chat.id, "Введіть опис.")
+    my_bot.send_message(call.message.chat.id, "Введіть опис:")
     my_bot.register_next_step_handler(call.message, update_curator, user_id)
 
 @my_bot.callback_query_handler(func=lambda call: call.data.startswith("regestration_curator:"))
@@ -317,6 +320,28 @@ def update_curator_callback(call):
     with conn_tg.cursor() as curs:
         curs.execute("UPDATE curator SET list_of_users=%s WHERE user_id=%s", (json.dumps(list_user), data[0]))
         conn_tg.commit()
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("list_user:"))
+def list_user(call):
+    data = call.data.split(":")[1]
+    data = take_user_data_id(data)
+    markup = telebot.types.InlineKeyboardMarkup()
+    back = telebot.types.InlineKeyboardButton("Повернутися", callback_data=f'back_to_all_list')
+    markup.add(back)
+    my_bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"{data[0][2]} {data[0][3]}",
+        reply_markup=markup
+    )
+@my_bot.callback_query_handler(func=lambda call: call.data.startswith("back_to_all_list"))
+def list_user(call):
+    my_bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"Перечень користувачів",
+        reply_markup=creat_list_all_user_markup()
+    )
+
 
 
 @my_bot.callback_query_handler(func=lambda call: True)
